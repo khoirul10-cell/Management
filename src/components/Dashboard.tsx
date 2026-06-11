@@ -1,42 +1,49 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Transaction } from '../types';
 import ChatInterface from './ChatInterface';
 import TransactionList from './TransactionList';
 import Charts from './Charts';
-import { LogOut, Wallet, Target, TrendingDown, TrendingUp } from 'lucide-react';
+import { LogOut, Wallet, Target, TrendingDown, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function Dashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budget, setBudget] = useState<number>(0);
+  const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>({});
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState('');
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [categoryBudgetInput, setCategoryBudgetInput] = useState('');
+  const [showCategoryBudgets, setShowCategoryBudgets] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
 
     // Fetch user settings (budget)
-    const fetchUser = async () => {
+    const fetchUser = async (retries = 2) => {
       try {
         const userRef = doc(db, 'users', user.uid);
         const docSnap = await getDoc(userRef);
         if (docSnap.exists()) {
           setBudget(docSnap.data().monthlyBudget || 0);
           setBudgetInput(String(docSnap.data().monthlyBudget || 0));
+          setCategoryBudgets(docSnap.data().categoryBudgets || {});
         } else {
           // Initialize user doc if not exists
           await setDoc(userRef, {
             monthlyBudget: 0,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
           });
         }
       } catch (err: any) {
         if(err?.message?.includes('the client is offline')) {
           console.error("Please check your Firebase configuration.");
+        } else if (err?.message?.includes('Missing or insufficient permissions') && retries > 0) {
+          setTimeout(() => fetchUser(retries - 1), 1000); // Retry after a delay
         } else {
           try {
              handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
@@ -83,10 +90,30 @@ export default function Dashboard() {
       const val = Number(budgetInput);
       await setDoc(doc(db, 'users', user.uid), {
         monthlyBudget: val,
-        updatedAt: new Date()
+        updatedAt: serverTimestamp()
       }, { merge: true });
       setBudget(val);
       setIsEditingBudget(false);
+    } catch (e) {
+      try { handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`); } catch(err){}
+    }
+  };
+
+  const handleSaveCategoryBudget = async (category: string) => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const val = Number(categoryBudgetInput);
+      const newCategoryBudgets = { ...categoryBudgets, [category]: val };
+      if (val <= 0) {
+        delete newCategoryBudgets[category];
+      }
+      await setDoc(doc(db, 'users', user.uid), {
+        categoryBudgets: newCategoryBudgets,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setCategoryBudgets(newCategoryBudgets);
+      setEditingCategory(null);
     } catch (e) {
       try { handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`); } catch(err){}
     }
@@ -100,6 +127,15 @@ export default function Dashboard() {
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
   const currentBalance = totalIncome - totalExpense;
+
+  const expensesByCategory = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const allCategories = Array.from(new Set([...Object.keys(expensesByCategory), ...Object.keys(categoryBudgets)])).sort();
 
   const formatIDR = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(val);
 
@@ -184,7 +220,7 @@ export default function Dashboard() {
 
         {/* Budget Progress if budget > 0 */}
         {budget > 0 && (
-          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 mb-6">
              <div className="flex justify-between items-end mb-3">
                <div>
                   <h3 className="font-semibold text-slate-200">Sisa Budget Bulan Ini</h3>
@@ -196,11 +232,93 @@ export default function Dashboard() {
                   </p>
                </div>
              </div>
-             <div className="w-full bg-white/10 rounded-full h-2">
+             <div className="w-full bg-white/10 rounded-full h-2 mb-4">
                 <div 
                   className={`h-full rounded-full ${totalExpense > budget ? 'bg-rose-500' : 'bg-emerald-500'}`} 
                   style={{ width: `${Math.min((totalExpense / budget) * 100, 100)}%` }}
                 ></div>
+             </div>
+             
+             <div className="border-t border-white/10 pt-4 mt-2">
+                <button 
+                  onClick={() => setShowCategoryBudgets(!showCategoryBudgets)}
+                  className="flex items-center text-sm font-medium text-slate-300 hover:text-white transition-colors"
+                >
+                   {showCategoryBudgets ? <ChevronUp className="w-4 h-4 mr-1"/> : <ChevronDown className="w-4 h-4 mr-1"/>}
+                   Target Kategori ({Object.keys(categoryBudgets).length})
+                </button>
+                
+                {showCategoryBudgets && (
+                  <div className="mt-4 space-y-4">
+                    {allCategories.map(category => {
+                      const categoryBudget = categoryBudgets[category] || 0;
+                      const expense = expensesByCategory[category] || 0;
+                      const isEditing = editingCategory === category;
+                      
+                      return (
+                        <div key={category} className="bg-white/5 rounded-xl p-3 border border-white/5">
+                           <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm font-medium text-slate-300 capitalize">{category}</span>
+                              {isEditing ? (
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    type="number" 
+                                    value={categoryBudgetInput}
+                                    onChange={(e) => setCategoryBudgetInput(e.target.value)}
+                                    className="w-24 bg-black/20 border border-white/10 rounded px-2 py-1 text-xs outline-none text-white focus:border-indigo-500"
+                                    placeholder="Budget..."
+                                  />
+                                  <button 
+                                    onClick={() => handleSaveCategoryBudget(category)} 
+                                    className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded font-medium transition-colors"
+                                  >
+                                    Save
+                                  </button>
+                                  <button 
+                                    onClick={() => setEditingCategory(null)} 
+                                    className="text-xs text-slate-400 hover:text-white px-1"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  {categoryBudget > 0 ? (
+                                    <span className="text-xs text-slate-400">
+                                      {formatIDR(expense)} / <span className="text-slate-200">{formatIDR(categoryBudget)}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">{formatIDR(expense)} (No limit)</span>
+                                  )}
+                                  <button 
+                                    onClick={() => {
+                                      setCategoryBudgetInput(String(categoryBudget));
+                                      setEditingCategory(category);
+                                    }}
+                                    className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded ml-2"
+                                  >
+                                    {categoryBudget > 0 ? 'Edit' : 'Set limit'}
+                                  </button>
+                                </div>
+                              )}
+                           </div>
+                           
+                           {categoryBudget > 0 && (
+                             <div className="w-full bg-white/5 rounded-full h-1.5">
+                               <div 
+                                 className={`h-full rounded-full ${expense > categoryBudget ? 'bg-rose-500' : 'bg-indigo-400'}`} 
+                                 style={{ width: `${Math.min((expense / categoryBudget) * 100, 100)}%` }}
+                               ></div>
+                             </div>
+                           )}
+                        </div>
+                      );
+                    })}
+                    {allCategories.length === 0 && (
+                      <p className="text-xs text-slate-500 italic">Belum ada kategori pengeluaran.</p>
+                    )}
+                  </div>
+                )}
              </div>
           </div>
         )}

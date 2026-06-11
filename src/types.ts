@@ -1,5 +1,6 @@
 export interface UserConfig {
   monthlyBudget: number;
+  categoryBudgets?: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
 }
