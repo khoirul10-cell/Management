@@ -4,12 +4,13 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import rateLimit from "express-rate-limit";
 import cron from "node-cron";
-import * as admin from 'firebase-admin';
+import { getApps, initializeApp } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
 // Initialize Firebase Admin (Requires GOOGLE_APPLICATION_CREDENTIALS)
 try {
-  if (!admin.apps.length) {
-    admin.initializeApp();
+  if (!getApps().length) {
+    initializeApp();
   }
 } catch (error) {
   console.warn("Failed to initialize Firebase Admin. Please ensure credentials are set.", error);
@@ -100,12 +101,12 @@ If no valid transaction is found, return { "error": "Could not understand the tr
   cron.schedule("0 20 * * *", async () => {
     console.log("[Cron] Menjalankan pengecekan transaksi harian pada 20:00 WIB...");
     try {
-      if (!admin.apps.length) {
+      if (!getApps().length) {
          console.warn("[Cron] Firebase Admin belum diinisialisasi. Melewati pengecekan.");
          return;
       }
       
-      const db = admin.firestore();
+      const db = getFirestore();
       // Gunakan batas hari ini
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Set ke awal hari lokal
@@ -119,7 +120,7 @@ If no valid transaction is found, return { "error": "Could not understand the tr
         
         // Cek jika ada transaksi pada hari ini
         const recentTransactions = await transactionsRef
-          .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(today))
+          .where('timestamp', '>=', Timestamp.fromDate(today))
           .limit(1)
           .get();
 
@@ -142,7 +143,6 @@ If no valid transaction is found, return { "error": "Could not understand the tr
        console.error("[Cron] Gagal menjalankan pengecekan transaksi harian:", error);
     }
   }, {
-    scheduled: true,
     timezone: "Asia/Jakarta" // Zona waktu WIB
   });
 

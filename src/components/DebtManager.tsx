@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Debt } from '../types';
@@ -33,7 +33,7 @@ export default function DebtManager() {
           timestamp: docData.timestamp?.toDate() || new Date(),
           createdAt: docData.createdAt?.toDate() || new Date(),
           updatedAt: docData.updatedAt?.toDate() || new Date(),
-        } as Debt);
+        } as unknown as Debt);
       });
       setDebts(data);
     }, (error) => {
