@@ -6,9 +6,11 @@ import { Transaction } from '../types';
 import ChatInterface from './ChatInterface';
 import TransactionList from './TransactionList';
 import Charts from './Charts';
-import { LogOut, Wallet, Target, TrendingDown, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
+import DebtManager from './DebtManager';
+import { LogOut, Wallet, Target, TrendingDown, TrendingUp, ChevronDown, ChevronUp, LayoutDashboard, FileText } from 'lucide-react';
 
 export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState<'overview' | 'debts'>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budget, setBudget] = useState<number>(0);
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>({});
@@ -169,7 +171,7 @@ export default function Dashboard() {
         <header className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-2">
           <div>
             <h1 className="text-3xl font-bold text-white">Halo!</h1>
-            <p className="text-slate-400 text-sm">Rekap keuangan Anda hari ini</p>
+            <p className="text-slate-400 text-sm">Teman Keuangan Cerdas Anda</p>
           </div>
           <div className="flex gap-4">
             <div className="bg-[#25D366]/10 text-[#25D366] px-4 py-2 rounded-full border border-[#25D366]/30 flex items-center gap-2 text-sm font-medium">
@@ -178,8 +180,26 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Top Highlights */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-white/5 p-1 rounded-xl w-fit border border-white/10 mb-6">
+          <button 
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'overview' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
+          >
+            <LayoutDashboard className="w-4 h-4" /> Ringkasan
+          </button>
+          <button 
+            onClick={() => setActiveTab('debts')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'debts' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
+          >
+            <FileText className="w-4 h-4" /> Utang & Piutang
+          </button>
+        </div>
+
+        {activeTab === 'overview' ? (
+          <>
+            {/* Top Highlights */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between">
               <p className="text-slate-400 text-sm mb-1">Total Saldo (Bulan Ini)</p>
               <div className="flex justify-between items-end">
@@ -345,6 +365,12 @@ export default function Dashboard() {
               <ChatInterface />
            </div>
         </div>
+          </>
+        ) : (
+          <div className="flex-1">
+            <DebtManager />
+          </div>
+        )}
       </main>
     </div>
   );

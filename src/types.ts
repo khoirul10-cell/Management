@@ -16,3 +16,16 @@ export interface Transaction {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface Debt {
+  id: string;
+  userId: string;
+  type: 'payable' | 'receivable'; // payable = utang, receivable = piutang
+  amount: number;
+  remainingAmount: number;
+  personName: string;
+  description?: string;
+  status: 'pending' | 'installment' | 'paid';
+  createdAt: Date;
+  updatedAt: Date;
+}
