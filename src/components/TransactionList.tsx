@@ -6,9 +6,10 @@ import { Search, Download } from 'lucide-react';
 
 interface Props {
   transactions: Transaction[];
+  userId: string;
 }
 
-export default function TransactionList({ transactions }: Props) {
+export default function TransactionList({ transactions, userId }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredTransactions = transactions.filter(tx => 
@@ -16,24 +17,10 @@ export default function TransactionList({ transactions }: Props) {
     tx.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleDownloadCSV = () => {
-    const headers = ['Tanggal', 'Tipe', 'Kategori', 'Nominal', 'Keterangan'];
-    const csvData = filteredTransactions.map(tx => [
-      format(tx.timestamp, "yyyy-MM-dd HH:mm"),
-      tx.type,
-      tx.category,
-      tx.amount,
-      tx.description || ''
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...csvData.map(e => e.map(item => `"${item}"`).join(','))].join("\\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "transaksi_coinai.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadExcel = () => {
+    if (!userId) return;
+    // Download using the backend endpoint
+    window.open(`/api/export/transactions/${userId}`, '_blank');
   };
 
   return (
@@ -51,11 +38,11 @@ export default function TransactionList({ transactions }: Props) {
             />
           </div>
           <button 
-            onClick={handleDownloadCSV}
+            onClick={handleDownloadExcel}
             className="flex items-center gap-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 border border-indigo-500/20 px-3 py-2 rounded-xl text-sm font-medium transition-all"
           >
             <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">CSV</span>
+            <span className="hidden sm:inline">Excel</span>
           </button>
         </div>
       )}

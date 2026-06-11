@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import rateLimit from "express-rate-limit";
 import cron from "node-cron";
+import ExcelJS from "exceljs";
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
@@ -77,6 +78,71 @@ If no valid transaction is found, return { "error": "Could not understand the tr
     // In a real scenario, you'd verify the Telegram bot token and process the message.
     console.log("Received webhook from Telegram:", req.body);
     res.status(200).send("OK");
+  });
+
+  // API endpoint for exporting transactions to Excel
+  app.get("/api/export/transactions/:userId", async (req, res) => {
+     try {
+        const { userId } = req.params;
+        const { month, year } = req.query; // e.g. month=6, year=2026 (1-indexed month)
+        
+        if (!getApps().length) {
+          return res.status(500).json({ error: "Firebase Admin not initialized." });
+        }
+
+        const db = getFirestore();
+        let query = db.collection(`users/${userId}/transactions`).orderBy('timestamp', 'desc');
+        
+        if (month && year) {
+           const startDate = new Date(Number(year), Number(month) - 1, 1);
+           const endDate = new Date(Number(year), Number(month), 0, 23, 59, 59, 999);
+           query = query.where('timestamp', '>=', Timestamp.fromDate(startDate))
+                        .where('timestamp', '<=', Timestamp.fromDate(endDate));
+        }
+
+        const snapshot = await query.get();
+        if (snapshot.empty) {
+           return res.status(404).json({ error: "No transactions found for the specified period." });
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'CoinAI Backend';
+        const worksheet = workbook.addWorksheet('Transactions');
+
+        worksheet.columns = [
+           { header: 'Tanggal', key: 'date', width: 20 },
+           { header: 'Tipe', key: 'type', width: 10 },
+           { header: 'Kategori', key: 'category', width: 20 },
+           { header: 'Nominal', key: 'amount', width: 15 },
+           { header: 'Keterangan', key: 'description', width: 30 },
+        ];
+
+        snapshot.forEach(doc => {
+           const data = doc.data();
+           const dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('id-ID') : '';
+           worksheet.addRow({
+              date: dateStr,
+              type: data.type === 'expense' ? 'Pengeluaran' : 'Pemasukan',
+              category: data.category,
+              amount: data.amount,
+              description: data.description || ''
+           });
+        });
+
+        // Format header
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="transactions_${month||'all'}_${year||'all'}.xlsx"`);
+
+        await workbook.xlsx.write(res);
+        res.end();
+
+     } catch (error) {
+        console.error("Export error:", error);
+        res.status(500).json({ error: "Failed to export data." });
+     }
   });
 
   // Vite middleware for development

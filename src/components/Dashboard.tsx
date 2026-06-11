@@ -355,7 +355,7 @@ export default function Dashboard() {
                    <h2 className="font-bold text-white">Riwayat Terakhir</h2>
                 </div>
                 <div className="p-5 flex-1 overflow-y-auto">
-                   <TransactionList transactions={transactions} />
+                   <TransactionList transactions={transactions} userId={auth.currentUser?.uid || ''} />
                 </div>
               </div>
            </div>
