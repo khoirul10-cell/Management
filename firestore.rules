@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isOwner(userId) { return request.auth.uid == userId; }
+
+    match /users/{userId} {
+      function isValidUser(data) {
+        return (
+          (!data.keys().hasAny(['monthlyBudget']) || (data.monthlyBudget is number && data.monthlyBudget >= 0))
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp
+        );
+      }
+
+      allow read: if isSignedIn() && isOwner(userId) && isValidId(userId);
+      
+      allow create: if isSignedIn() && isOwner(userId) && isValidId(userId)
+        && isValidUser(incoming()) 
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isSignedIn() && isOwner(userId) && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['monthlyBudget', 'updatedAt'])
+        && incoming().updatedAt == request.time;
+    }
+
+    match /users/{userId}/transactions/{transactionId} {
+      function isValidTransaction(data) {
+        return data.userId == userId
+          && data.type in ['income', 'expense']
+          && data.amount is number
+          && data.amount >= 0
+          && data.category is string && data.category.size() <= 50
+          && (!data.keys().hasAny(['description']) || (data.description is string && data.description.size() <= 500))
+          && data.timestamp is timestamp
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+
+      allow read: if isSignedIn() && isOwner(userId) && isValidId(userId) && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isOwner(userId) && isValidId(userId)
+        && isValidTransaction(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isSignedIn() && isOwner(userId) && isValidId(userId) && isValidId(transactionId)
+        && isValidTransaction(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'category', 'description', 'type', 'timestamp', 'updatedAt'])
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+        
+      allow delete: if isSignedIn() && isOwner(userId) && isValidId(userId) && isValidId(transactionId);
+    }
+  }
+}
