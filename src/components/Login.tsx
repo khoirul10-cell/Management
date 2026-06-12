@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
+import { auth, googleProvider, setCachedAccessToken } from '../lib/firebase';
 import { Wallet, Mail, KeyRound } from 'lucide-react';
 
 export default function Login() {
@@ -12,7 +12,11 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     try {
       setError('');
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setCachedAccessToken(credential.accessToken);
+      }
     } catch (err: any) {
       setError(err.message || 'Google sign in failed');
     }
@@ -33,22 +37,22 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
       {/* Mesh Gradient Background Decoration */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none"></div>
       
-      <div className="max-w-md w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden z-10 transition-all">
+      <div className="max-w-md w-full bg-white dark:bg-white/5 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden z-10 transition-all">
         <div className="p-8 pb-4 text-center">
           <div className="w-16 h-16 bg-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mx-auto mb-4">
-            <Wallet className="w-8 h-8 text-white" />
+            <Wallet className="w-8 h-8 text-slate-900 dark:text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">CoinAI</h1>
-          <p className="text-slate-400 mt-2 text-sm">Personal Finance Management</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">CoinAI</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">Personal Finance Management</p>
         </div>
         
         <div className="p-8 pt-4">
-          <h2 className="text-xl font-bold text-white mb-6 text-center">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 text-center">
             {isSignUp ? 'Create Account' : 'Welcome Back'}
           </h2>
 
@@ -60,16 +64,16 @@ export default function Login() {
 
           <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-600 dark:text-slate-600 dark:text-slate-300 mb-1">Email</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-slate-400" />
+                  <Mail className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                 </div>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-white placeholder-slate-500 transition-colors"
+                  className="block w-full pl-10 pr-3 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-slate-900 dark:text-white placeholder-slate-500 transition-colors"
                   placeholder="you@example.com"
                   required
                 />
@@ -77,16 +81,16 @@ export default function Login() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-600 dark:text-slate-600 dark:text-slate-300 mb-1">Password</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <KeyRound className="h-5 w-5 text-slate-400" />
+                  <KeyRound className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                 </div>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-white placeholder-slate-500 transition-colors"
+                  className="block w-full pl-10 pr-3 py-2.5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-slate-900 dark:text-white placeholder-slate-500 transition-colors"
                   placeholder="••••••••"
                   required
                 />
@@ -103,16 +107,16 @@ export default function Login() {
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10"></div>
+              <div className="w-full border-t border-slate-200 dark:border-white/10"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#020617] text-slate-400">Or continue with</span>
+              <span className="px-2 bg-slate-50 dark:bg-[#020617] text-slate-500 dark:text-slate-400">Or continue with</span>
             </div>
           </div>
 
           <button
             onClick={handleGoogleLogin}
-            className="w-full flex justify-center items-center py-2.5 px-4 border border-white/10 rounded-xl bg-white/5 text-sm font-medium text-slate-200 hover:bg-white/10 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-[#020617]"
+            className="w-full flex justify-center items-center py-2.5 px-4 border border-slate-200 dark:border-white/10 rounded-xl bg-white dark:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/10 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-[#020617]"
           >
             <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
               <path
@@ -135,7 +139,7 @@ export default function Login() {
             Sign in with Google
           </button>
 
-          <p className="mt-8 text-center text-sm text-slate-400">
+          <p className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
             {isSignUp ? 'Already have an account?' : 'Don\'t have an account?'}
             <button
               onClick={() => setIsSignUp(!isSignUp)}

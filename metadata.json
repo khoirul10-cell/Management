@@ -1,1 +1,1 @@
-{"name": "CoinAI","description": "Personal finance management website with an AI chat assistant for logging transactions, budget tracking, and real-time statistics.","requestFramePermissions": [],"majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
+{"name": "CoinAI","description": "Personal finance manager app","requestFramePermissions": [],"majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
