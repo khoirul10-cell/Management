@@ -13,6 +13,13 @@ interface CurrencyRate {
   symbol: string;
 }
 
+interface MetalRate {
+  symbol: string;
+  name: string;
+  priceUSD: number;
+  priceIDR: number;
+}
+
 interface CryptoRate {
   symbol: string;
   name: string;
@@ -43,6 +50,11 @@ const TARGET_CURRENCIES = [
   { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
 ];
 
+const TARGET_METALS = [
+  { symbol: 'XAU', name: 'Gold', unit: 'per gram' },
+  { symbol: 'XAG', name: 'Silver', unit: 'per gram' },
+];
+
 const TARGET_CRYPTOS = [
   { symbol: 'BTC', name: 'Bitcoin' },
   { symbol: 'ETH', name: 'Ethereum' },
@@ -63,6 +75,7 @@ const INITIAL_STOCKS: StockIndex[] = [
 
 export default function GlobalCurrencies() {
   const [rates, setRates] = useState<CurrencyRate[]>([]);
+  const [metalRates, setMetalRates] = useState<MetalRate[]>([]);
   const [cryptoRates, setCryptoRates] = useState<CryptoRate[]>([]);
   const [stockIndices, setStockIndices] = useState<StockIndex[]>(INITIAL_STOCKS);
   const [btcChartData, setBtcChartData] = useState<ChartDataPoint[]>([]);
@@ -193,7 +206,38 @@ export default function GlobalCurrencies() {
         };
       });
 
-      // 2. Fetch Crypto Rates from Binance
+      // 2. Fetch Metal Rates from our proxy backend endpoint (real-time from Yahoo Finance)
+      let updatedMetals: MetalRate[] = [];
+      try {
+        const metalsResponse = await fetch("/api/precious-metals");
+        if (metalsResponse.ok) {
+          const metalsData = await metalsResponse.json();
+          updatedMetals = TARGET_METALS.map(m => {
+            const priceUSD = m.symbol === 'XAU' ? metalsData.gold : metalsData.silver;
+            return {
+               ...m,
+               priceUSD,
+               priceIDR: priceUSD * idrRate
+            };
+          });
+        }
+      } catch (err) {
+         console.error("Failed to fetch real-time metal rates via backend proxy:", err);
+      }
+      
+      if (updatedMetals.length === 0) {
+         updatedMetals = TARGET_METALS.map(m => {
+             const basePrices: Record<string, number> = {'XAU': 2370 / 31.1034768, 'XAG': 29.5 / 31.1034768};
+             const priceUSD = basePrices[m.symbol] || 0;
+             return {
+                ...m,
+                priceUSD,
+                priceIDR: priceUSD * idrRate
+             };
+         });
+      }
+
+      // 3. Fetch Crypto Rates from Binance
       const symbols = TARGET_CRYPTOS.map(c => `"${c.symbol}USDT"`).join(',');
       const cryptoResponse = await fetch(`https://api.binance.com/api/v3/ticker/price?symbols=[${symbols}]`);
       let updatedCryptos: CryptoRate[] = [];
@@ -212,7 +256,7 @@ export default function GlobalCurrencies() {
          });
       }
 
-      // 3. Fetch BTC 7-day History
+      // 4. Fetch BTC 7-day History
       if (btcChartData.length === 0) {
         const btcHistResponse = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=7`);
         if (btcHistResponse.ok) {
@@ -228,6 +272,7 @@ export default function GlobalCurrencies() {
       await new Promise(resolve => setTimeout(resolve, 600));
       
       setRates(updatedRates);
+      setMetalRates(updatedMetals);
       if (updatedCryptos.length > 0) {
          setCryptoRates(updatedCryptos);
       }
@@ -377,6 +422,42 @@ export default function GlobalCurrencies() {
             ))}
           </div>
         )}
+      </div>
+
+        {/* Metals Section */}
+      <div className="bg-white dark:bg-white/5 backdrop-blur-md rounded-2xl p-6 border border-slate-200 dark:border-white/10">
+        <div className="mb-6">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Activity className="w-5 h-5 text-amber-500" />
+            Logam Mulia (Real-time)
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Harga emas dan perak per gram
+          </p>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {metalRates.map((metal) => (
+              <div 
+                key={metal.symbol}
+                className="p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-black/20 flex justify-between items-center"
+              >
+                 <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold">
+                     {metal.symbol[1]}
+                   </div>
+                   <div>
+                     <h3 className="font-bold text-slate-900 dark:text-white">{metal.name}</h3>
+                     <p className="text-[10px] text-slate-500 dark:text-slate-400">{metal.unit}</p>
+                   </div>
+                 </div>
+                 <div className="text-right">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(metal.priceIDR)}</span>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{formatUSD(metal.priceUSD)} USD</p>
+                 </div>
+              </div>
+            ))}
+        </div>
       </div>
 
       {/* Crypto Section */}

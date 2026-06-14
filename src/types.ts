@@ -19,6 +19,7 @@ export interface Transaction {
   editCount?: number;
   createdAt: Date;
   updatedAt: Date;
+  tags?: string[];
 }
 
 export interface PriceAlert {
@@ -63,6 +64,23 @@ export interface Investment {
   name: string; // e.g., Bitcoin, Apple
   quantity: number;
   buyPriceIDR: number; // The average price bought per unit in IDR
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RecurringTransaction {
+  id: string;
+  userId: string;
+  type: 'income' | 'expense';
+  amount: number;
+  category: string;
+  description?: string;
+  interval: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  walletSource?: string;
+  startDate: Date;
+  lastTriggeredDate?: Date;
+  nextTriggeredDate: Date;
+  status: 'active' | 'paused';
   createdAt: Date;
   updatedAt: Date;
 }

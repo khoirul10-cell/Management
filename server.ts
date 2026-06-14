@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import rateLimit from "express-rate-limit";
@@ -39,6 +40,28 @@ async function startServer() {
   });
 
   app.use("/api/", apiLimiter);
+
+  // Serve raw qris image files from key directories if uploaded in root or src directories
+  app.get("/qris.png", (req, res, next) => {
+    const rootPath = process.cwd();
+    const possiblePaths = [
+      path.join(rootPath, "qris.png"),
+      path.join(rootPath, "qris.jpg"),
+      path.join(rootPath, "qris.jpeg"),
+      path.join(rootPath, "src", "components", "qris.png"),
+      path.join(rootPath, "src", "components", "qris.jpg"),
+      path.join(rootPath, "src", "components", "qris.jpeg"),
+      path.join(rootPath, "src", "qris.png"),
+      path.join(rootPath, "src", "qris.jpg"),
+      path.join(rootPath, "src", "qris.jpeg"),
+    ];
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+    }
+    next();
+  });
 
   // Helper function to call Gemini with automatic retries and fallback models in case of 503/429
   async function generateContentWithRetry(params: {
@@ -96,6 +119,48 @@ async function startServer() {
     throw lastError;
   }
 
+  app.get("/api/precious-metals", async (req, res) => {
+    try {
+       const goldRes = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/GC=F");
+       const silverRes = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/SI=F");
+       
+       let goldPriceUSD = 2370; // fallback per troy ounce
+       let silverPriceUSD = 29.5; // fallback per troy ounce
+       
+       if (goldRes.ok) {
+          const goldData = await goldRes.json();
+          const price = goldData?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price) goldPriceUSD = price;
+       }
+       
+       if (silverRes.ok) {
+          const silverData = await silverRes.json();
+          const price = silverData?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price) silverPriceUSD = price;
+       }
+
+       // 1 troy ounce = 31.1034768 grams
+       const goldPerGramUSD = goldPriceUSD / 31.1034768;
+       const silverPerGramUSD = silverPriceUSD / 31.1034768;
+
+       res.json({
+          gold: goldPerGramUSD,
+          silver: silverPerGramUSD,
+          goldOunce: goldPriceUSD,
+          silverOunce: silverPriceUSD
+       });
+    } catch (err: any) {
+       console.error("Metals proxy error:", err);
+       res.json({
+          gold: 2370 / 31.1034768,
+          silver: 29.5 / 31.1034768,
+          goldOunce: 2370,
+          silverOunce: 29.5,
+          isFallback: true
+       });
+    }
+  });
+
   app.post("/api/parse-transaction", async (req, res) => {
     try {
       if (!process.env.GEMINI_API_KEY) {
@@ -109,7 +174,23 @@ async function startServer() {
 
       const today = new Date();
       const prompt = `You are a financial assistant. Extract all the transaction details from the following text: "${text}".
-Understand short forms for numbers like "2k" means 2000, "5k" means 5000, etc. Also understand global currency formatting, where dots are used for thousands (1.000.000) and commas for decimals (1.000.000,00), or commas for thousands and dots for decimals (1,000,000.00). Clean and parse them properly into a plain number. If the user says "tambah uang", "masuk", "gaji", or '<wallet> + <amount>' or '<wallet> tambah <amount>' (e.g., "seabank + 20k", "gopay tambah 39k"), treat it as an "income" and assign to the parsed wallet. If they say "beli", "jajan", "keluar", '<wallet> - <amount>', or '<wallet> kurang <amount>', treat it as an "expense".
+Understand short forms for numbers like "2k" means 2000, "5k" means 5000, etc., and Indonesian speech-to-text phonetic slang (e.g., "rebu" / "rb" means "ribu", "juta" / "jt" means "juta").
+Since the input text may come from Indonesian speech recognition (voice/speech API), you must intelligently auto-correct homophones and common misheard bank/wallet names:
+- "jibank", "jibenk", "sea bank", "sheabank", "si bank", "si benk", "seabenk" -> normalize to "SeaBank"
+- "beca", "becah", "beceah", "becea" -> normalize to "BCA"
+- "gopay", "gopes", "gopet", "gopet", "gopai", "gope" -> normalize to "GoPay"
+- "danah", "danna" -> normalize to "DANA"
+- "opo", "obo", "ovoo" -> normalize to "OVO"
+- "sopipay", "shope pay", "shopee pay", "shoppee pay", "shopepey", "sopi pe", "sopi pei", "shoppepay" -> normalize to "ShopeePay"
+- "link aja", "ling aja", "linggaja", "lingk aja" -> normalize to "LinkAja"
+- "besei", "beesi" -> normalize to "BSI"
+- "beeni", "benei" -> normalize to "BNI"
+- "berei", "berii" -> normalize to "BRI"
+- "manderi" -> normalize to "Mandiri"
+- "jaku" -> normalize to "Jago"
+- "kes", "kesh", "uang kes", "uang kesh", "uang kas", "kash" -> normalize to "Uang Cash"
+
+Always clean and parse the amounts properly into a plain number. If the user says "tambah uang", "masuk", "gaji", or '<wallet> + <amount>' or '<wallet> tambah <amount>' (e.g., "seabank + 20k", "gopay tambah 39k"), treat it as "income" and assign to the parsed wallet. If they say "beli", "jajan", "keluar", '<wallet> - <amount>', or '<wallet> kurang <amount>', treat it as an "expense".
 Identify the source wallet or bank from the text. Valid options include "Uang Cash", "GoPay", "DANA", "OVO", "ShopeePay", "LinkAja", "BCA", "Mandiri", "BNI", "BRI", "SeaBank", "BSI", "Jago", "Lainnya". If you cannot confidently determine the source or multiple sources, set "walletSource" to "unknown".
 Identify the date of the transaction if it is mentioned (for example "kemarin", "tanggal 12 juni"). If a specific date or "kemarin" (yesterday) is mentioned, set "isPastDate" to true and "dateString" to the ISO 8601 string of that date (assume current year is ${today.getFullYear()}, current month is ${today.getMonth() + 1}, today's date is ${today.getDate()}).
 The user might provide multiple transactions at once (up to 200). 
@@ -125,6 +206,7 @@ Return exactly a JSON array containing objects having these fields:
 - debtType: "payable" (if user borrows money / utang) or "receivable" (if user lends money / piutang), null if not a debt.
 - isDebtPayment: boolean (true if the transaction is paying off a debt, e.g. "bayar utang", "cicil utang", "bayar pinjaman").
 - personName: string (the name of the person involved in the debt/piutang/payment). Extract from text if mentioned, otherwise return "Hamba Allah". Null if not a debt or debt payment.
+- tags: an array of strings representing tags associated with this transaction (e.g., ["Business"] if it relates to office, client work, work projects, business expenses, etc.; ["Personal"] if it's personal life, leisure, food, household, personal projects; ["Investment"] if it relates to investment or asset purchase; otherwise general tags of your choice inferred from context as appropriate. Always return at least ["Personal"] or ["Business"] or other relevant tags as an array of strings. Do not return empty array if you can infer one of these).
 
 Note for Debt:
 If the user borrows money (utang), type must be "income", category must be "utang", isDebt must be true, debtType must be "payable", walletSource should indicate where the borrowed money goes.
@@ -235,6 +317,189 @@ If no valid receipt or list is found, return { "error": "Could not understand th
     // In a real scenario, you'd verify the Telegram bot token and process the message.
     console.log("Received webhook from Telegram:", req.body);
     res.status(200).send("OK");
+  });
+
+  app.post("/api/support-chat", async (req, res) => {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server." });
+      }
+      const { message } = req.body;
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      const prompt = `Anda adalah Customer Service/Asisten untuk aplikasi keuangan CoinAI Flow. 
+Aplikasi ini memiliki fitur: pencatatan transaksi manual dan pintar (dengan AI teks & foto setruk), grafik overview transaksi, target budget bulanan per kategori, manajemen utang & piutang, portofolio investasi konversi currency otomatis, serta laporan transaksi.
+Jawab pertanyaan user berikut tentang cara kerja aplikasi dengan ramah, informatif, singkat, bahasa Indonesia, dan membantu.
+Pertanyaan user: "${message}"`;
+
+      const response = await generateContentWithRetry({
+        model: "gemini-3.1-flash-lite",
+        contents: prompt
+      });
+
+      if (response.text) {
+        res.json({ reply: response.text.trim() });
+      } else {
+        res.status(500).json({ error: "Empty response from AI" });
+      }
+    } catch (error: any) {
+      console.error("Support chat error:", error);
+      res.status(500).json({ error: "Failed to respond." });
+    }
+  });
+
+  app.post("/api/chat-logger", async (req, res) => {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server." });
+      }
+      
+      const { message, history } = req.body;
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      const today = new Date();
+      
+      // Building a chat history payload for gemini model conversation
+      const prompt = `You are "CoinAI Copilot", an Indonesian financial assistant and automated transaction logging assistant.
+Your main job is to listen to the user's natural language messages, extract any financial transactions, and respond in Indonesian with a polite, brief, and warm summary of what you logged, OR answer their financial questions.
+
+Rules for transaction parsing from voice/text:
+- Understand numbers like "2k" = 2000, "5k" = 5000, "15 rb" = 15000, "20 rebu" = 20000, "1 juta" / "1 jt" = 1000000.
+- Intelligently normalize wallet/bank/payment sources:
+  - "jibank", "jibenk", "sea bank", "sheabank", "si bank", "si benk", "seabenk" -> "SeaBank"
+  - "beca", "becah", "beceah", "becea" -> "BCA"
+  - "gopay", "gopes", "gopet", "gopet", "gopai", "gope" -> "GoPay"
+  - "danah", "danna" -> "DANA"
+  - "opo", "obo", "ovoo" -> "OVO"
+  - "sopipay", "shope pay", "shopee pay", "shoppee pay", "shopepey", "sopi pe", "sopi pei", "shoppepay" -> "ShopeePay"
+  - "link aja", "ling aja", "linggaja", "lingk aja" -> "LinkAja"
+  - "besei", "beesi" -> "BSI"
+  - "beeni", "benei" -> "BNI"
+  - "berei", "berii" -> "BRI"
+  - "manderi" -> "Mandiri"
+  - "jaku" -> "Jago"
+  - "kes", "kesh", "uang kes", "uang kesh", "uang kas", "kash" -> "Uang Cash"
+- If the user says "tambah", "masuk", "gaji", "dapet", "kembalian", "+", treat it as "income". If they say "beli", "jajan", "keluar", "-", "bayar", treat it as "expense".
+- Identify the date of the transaction if it is mentioned (e.g., "kemarin" -> yesterday, "tanggal 12 juni"). Set "isPastDate" to true and "dateString" to the ISO 8601 YYYY-MM-DD format (Current year is ${today.getFullYear()}, current month is ${today.getMonth() + 1}, today's date is ${today.getDate()}).
+- Return exactly a JSON object containing:
+  1. "reply": A warm, encouraging sentence in Indonesian summarizing what you recorded (e.g., "Oke bos! Pengeluaran Rp15.000 untuk kopi dengan GoPay sudah berhasil saya catat ya.") or answering their question. Make it concise and polite.
+  2. "transactions": An array of objects. If no transaction was mentioned or parsed, return []. If multiple are mentioned, return all of them.
+  Each object in "transactions" must have:
+  - type: "expense" | "income"
+  - amount: a positive number representing the amount
+  - category: a short name strictly in lowercase (e.g. "food", "transport", "salary", "utilities", "entertainment", "health", "utang", "piutang", "other", "bank", "e-wallet", "cash")
+  - description: a description of the item/merchant
+  - isPastDate: boolean
+  - dateString: string (YYYY-MM-DD or empty)
+  - walletSource: identified wallet or "unknown"
+  - isDebt: boolean
+  - debtType: "payable" | "receivable" | null
+  - isDebtPayment: boolean
+  - personName: string | null (default "Hamba Allah" if isDebt or isDebtPayment is true but name is unavailable, otherwise null)
+  - tags: string[] (array of strings, e.g. ["Business"] or ["Personal"] or other inferred tags - always return at least ["Personal"] or ["Business"] or general categories as strings)
+
+User prompt: "${message}"
+
+You must respond in valid JSON format. Example return schema:
+{
+  "reply": "Silakan, saya sudah mencatatkan pengeluaran nasi goreng sebesar Rp 20.000 menggunakan Uang Cash.",
+  "transactions": [
+    {
+      "type": "expense",
+      "amount": 20000,
+      "category": "food",
+      "description": "nasi goreng",
+      "isPastDate": false,
+      "dateString": "",
+      "walletSource": "Uang Cash",
+      "isDebt": false,
+      "debtType": null,
+      "isDebtPayment": false,
+      "personName": null,
+      "tags": ["Personal"]
+    }
+  ]
+}`;
+
+      // Build model call
+      const response = await generateContentWithRetry({
+        model: "gemini-3.1-flash-lite",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+
+      if (response.text) {
+        try {
+          let rawText = response.text.trim();
+          if (rawText.startsWith('```json')) rawText = rawText.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+          else if (rawText.startsWith('```')) rawText = rawText.replace(/^```\n?/, '').replace(/\n?```$/, '');
+          const result = JSON.parse(rawText);
+          res.json(result);
+        } catch (e) {
+          console.error("AI parse chat result error:", response.text);
+          res.status(500).json({ error: "Failed to parse text: format error" });
+        }
+      } else {
+        res.status(500).json({ error: "Failed to parse text: empty response" });
+      }
+
+    } catch (error: any) {
+      console.error("AI Chat Logger error:", error);
+      res.status(500).json({ error: error.message || "Failed to process chat." });
+    }
+  });
+
+  app.post("/api/smart-insights", async (req, res) => {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server." });
+      }
+
+      const { transactions } = req.body;
+      if (!transactions || !Array.isArray(transactions)) {
+        return res.status(400).json({ error: "Transactions array is required" });
+      }
+
+      // Filter and map recent transactions for context
+      const recentTxs = transactions
+        .sort((a: any, b: any) => {
+           let dateA = new Date(a.timestamp?.seconds ? a.timestamp.seconds * 1000 : a.timestamp);
+           let dateB = new Date(b.timestamp?.seconds ? b.timestamp.seconds * 1000 : b.timestamp);
+           return dateB.getTime() - dateA.getTime();
+        })
+        .filter((t: any) => t.type === 'expense') // focus on expenses for insights
+        .slice(0, 100)
+        .map((t: any) => ({ desc: t.description, amount: t.amount, category: t.category, date: new Date(t.timestamp?.seconds ? t.timestamp.seconds * 1000 : t.timestamp).toLocaleDateString() }));
+
+      const prompt = `You are "CoinAI Copilot", an Indonesian financial assistant.
+The user has asked for "Smart Insights" to analyze their recent spending and find areas to reduce expenses.
+Here is a list of their recent expenses (up to 100):
+${JSON.stringify(recentTxs, null, 2)}
+
+Provide a helpful, insightful, and practical analysis of their spending patterns in Indonesian. 
+Focus only on actionable advice to reduce expenses based on the data.
+Identify high spend categories or frequent small charges.
+Keep it warmly professional, concise, and structured. Use emoji and markdown formatting (bullet points) for readability. 
+Do not wrap your response in JSON; just provide the raw markdown message.`;
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      const reply = response.text || "Maaf, saya tidak dapat menghasilkan Smart Insights saat ini.";
+      res.json({ reply });
+    } catch (error: any) {
+      console.error("Smart Insights error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate smart insights." });
+    }
   });
 
   // API endpoint for exporting transactions to Excel

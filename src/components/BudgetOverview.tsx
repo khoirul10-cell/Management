@@ -7,6 +7,7 @@ interface BudgetOverviewProps {
   categoryBudgets: Record<string, number>;
   expensesByCategory: Record<string, number>;
   onSaveCategoryBudget: (category: string, amount: number) => void;
+  onOpenSettings?: () => void;
 }
 
 export default function BudgetOverview({
@@ -14,7 +15,8 @@ export default function BudgetOverview({
   totalExpense,
   categoryBudgets,
   expensesByCategory,
-  onSaveCategoryBudget
+  onSaveCategoryBudget,
+  onOpenSettings
 }: BudgetOverviewProps) {
   const [showCategoryBudgets, setShowCategoryBudgets] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
@@ -47,13 +49,23 @@ export default function BudgetOverview({
        </div>
        
        <div className="border-t border-slate-200 dark:border-white/10 pt-4 mt-2">
-          <button 
-            onClick={() => setShowCategoryBudgets(!showCategoryBudgets)}
-            className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-             {showCategoryBudgets ? <ChevronUp className="w-4 h-4 mr-1"/> : <ChevronDown className="w-4 h-4 mr-1"/>}
-             Target Kategori ({Object.keys(categoryBudgets).length})
-          </button>
+          <div className="flex justify-between items-center">
+            <button 
+              onClick={() => setShowCategoryBudgets(!showCategoryBudgets)}
+              className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+               {showCategoryBudgets ? <ChevronUp className="w-4 h-4 mr-1"/> : <ChevronDown className="w-4 h-4 mr-1"/>}
+               Target Kategori ({Object.keys(categoryBudgets).length})
+            </button>
+            {onOpenSettings && (
+              <button 
+                onClick={onOpenSettings}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                Kelola Kategori »
+              </button>
+            )}
+          </div>
           
           {showCategoryBudgets && (
             <div className="mt-4 space-y-4">

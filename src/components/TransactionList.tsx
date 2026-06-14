@@ -22,21 +22,59 @@ const formatWalletSource = (ws: string | undefined | null) => {
   return ws;
 };
 
+const PREDEFINED_TAGS = ['Personal', 'Business', 'Investment', 'Needs', 'Wants'];
+
+const getTagBadgeStyle = (tag: string) => {
+  const t = tag.toLowerCase();
+  if (t === 'business' || t === 'bisnis' || t === 'kantor') {
+    return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200/55 dark:border-blue-800/35';
+  }
+  if (t === 'personal' || t === 'pribadi') {
+    return 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/55 dark:border-emerald-800/35';
+  }
+  if (t === 'investment' || t === 'investasi' || t === 'crypto' || t === 'stock') {
+    return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200/55 dark:border-amber-800/35';
+  }
+  if (t === 'needs' || t === 'kebutuhan') {
+    return 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200/55 dark:border-purple-800/35';
+  }
+  if (t === 'wants' || t === 'keinginan') {
+    return 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200/55 dark:border-rose-800/35';
+  }
+  return 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-350 border border-slate-200/55 dark:border-slate-700/50';
+};
+
 export default function TransactionList({ transactions, userId }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [taggingTxId, setTaggingTxId] = useState<string | null>(null);
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('Semua');
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   
   // Edit State
+
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editTags, setEditTags] = useState('');
+
+  // Dynamically extract unique tags from the transactions list
+  const allUniqueTags = Array.from(
+    new Set(
+      transactions
+        .flatMap(tx => tx.tags || [])
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0)
+    )
+  );
 
   const filteredTransactions = transactions.filter(tx => {
     const matchSearch = tx.category.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      tx.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (tx.tags && tx.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+      tx.amount.toString().includes(searchTerm);
       
     let matchDate = true;
     if (startDate) {
@@ -48,7 +86,17 @@ export default function TransactionList({ transactions, userId }: Props) {
       matchDate = matchDate && new Date(tx.timestamp).getTime() <= end.getTime();
     }
 
-    return matchSearch && matchDate;
+    let matchTag = true;
+    if (selectedTagFilter !== 'Semua') {
+      matchTag = tx.tags ? tx.tags.some(t => t.toLowerCase() === selectedTagFilter.toLowerCase()) : false;
+    }
+    
+    let matchType = true;
+    if (filterType !== 'all') {
+      matchType = tx.type === filterType;
+    }
+
+    return matchSearch && matchDate && matchTag && matchType;
   });
 
   const handleDownloadExcel = () => {
@@ -123,6 +171,7 @@ export default function TransactionList({ transactions, userId }: Props) {
     setEditAmount(tx.amount.toString());
     setEditCategory(tx.category);
     setEditDescription(tx.description || '');
+    setEditTags(tx.tags ? tx.tags.join(', ') : '');
   };
 
   const handleEditSave = async (e: React.FormEvent) => {
@@ -139,11 +188,17 @@ export default function TransactionList({ transactions, userId }: Props) {
       const oldAmount = Number(editingTx.amount) || 0;
       const amountDiff = newAmount - oldAmount;
 
+      const parsedTags = editTags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+
       const txRef = doc(db, `users/${userId}/transactions`, editingTx.id);
       await updateDoc(txRef, {
         amount: newAmount,
         category: editCategory,
         description: editDescription,
+        tags: parsedTags,
         editCount: (editingTx.editCount || 0) + 1
       });
 
@@ -172,12 +227,23 @@ export default function TransactionList({ transactions, userId }: Props) {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 dark:text-slate-400" />
               <input 
                 type="text" 
-                placeholder="Cari transaksi (kategori / rincian)..." 
+                placeholder="Cari nama, kategori, tag, atau nominal..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
+            
+            <select
+               value={filterType}
+               onChange={(e) => setFilterType(e.target.value as any)}
+               className="bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
+            >
+               <option value="all">Semua Tipe</option>
+               <option value="income">Pemasukan (+)</option>
+               <option value="expense">Pengeluaran (-)</option>
+            </select>
+
             <div className="flex gap-2">
               <input
                 type="date"
@@ -200,6 +266,35 @@ export default function TransactionList({ transactions, userId }: Props) {
                 <Download className="w-4 h-4" />
               </button>
             </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-white/5">
+            <span className="text-xs text-slate-500 dark:text-slate-400 mr-1 font-medium">Filter Tag:</span>
+            <button
+              type="button"
+              onClick={() => setSelectedTagFilter('Semua')}
+              className={`text-xs px-2.5 py-1 rounded-lg transition-all border ${
+                selectedTagFilter === 'Semua'
+                  ? 'bg-indigo-600 text-white border-indigo-500 font-semibold shadow-sm'
+                  : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+              }`}
+            >
+              Semua
+            </button>
+            {allUniqueTags.map(tag => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setSelectedTagFilter(tag)}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-all border ${
+                  selectedTagFilter.toLowerCase() === tag.toLowerCase()
+                    ? 'bg-indigo-600 text-white border-indigo-500 font-semibold shadow-sm'
+                    : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+                }`}
+              >
+                #{tag}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -230,6 +325,44 @@ export default function TransactionList({ transactions, userId }: Props) {
                       placeholder="Deskripsi"
                       className="w-full text-xs bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-500 dark:text-slate-400"
                     />
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      <input 
+                        type="text" 
+                        value={editTags} 
+                        onChange={(e) => setEditTags(e.target.value)}
+                        placeholder="Tag (pisahkan dengan koma, misal: Business, Personal)"
+                        className="w-full text-xs bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-500 dark:text-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 self-center mr-1">Rekomendasi:</span>
+                        {PREDEFINED_TAGS.map((pt) => {
+                          const active = editTags.split(',').map(s=>s.trim().toLowerCase()).includes(pt.toLowerCase());
+                          return (
+                            <button
+                              key={pt}
+                              type="button"
+                              onClick={() => {
+                                const currentTags = editTags.split(',').map(s=>s.trim()).filter(Boolean);
+                                const index = currentTags.findIndex(s => s.toLowerCase() === pt.toLowerCase());
+                                if (index >= 0) {
+                                  currentTags.splice(index, 1);
+                                } else {
+                                  currentTags.push(pt);
+                                }
+                                setEditTags(currentTags.join(', '));
+                              }}
+                              className={`text-[9.5px] px-2 py-0.5 rounded-full font-medium border transition-colors ${
+                                active 
+                                  ? 'bg-indigo-600/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' 
+                                  : 'bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+                              }`}
+                            >
+                              +{pt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <input 
@@ -276,6 +409,20 @@ export default function TransactionList({ transactions, userId }: Props) {
                         <span>•</span>
                         <span>{format(tx.timestamp, "dd MMM yyyy HH:mm", { locale: id })}</span>
                       </div>
+                      {tx.tags && tx.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {tx.tags.map((tag, idx) => (
+                            <span 
+                              key={idx} 
+                              onClick={() => setSelectedTagFilter(tag)}
+                              title={`Klik untuk memfilter tag #${tag}`}
+                              className={`text-[9.5px] px-1.5 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${getTagBadgeStyle(tag)}`}
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">

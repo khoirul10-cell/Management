@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, LineChart, Line, Legend } from 'recharts';
 import { Transaction } from '../types';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
+import { TrendingUp, Calendar, Info } from 'lucide-react';
 
 interface Props {
   transactions: Transaction[];
@@ -116,6 +117,51 @@ export default function Charts({ transactions, walletBalances }: Props) {
       return { date: dateStr, amount: total };
   });
 
+  // ============================
+  // Monthly Spending & Income Trend
+  // ============================
+  const monthlyTrendData = (() => {
+    const tempMonthsSet = new Set<string>();
+    const now = new Date();
+    
+    // Add last 6 months to guarantee continuous trend coordinates
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      tempMonthsSet.add(format(d, 'yyyy-MM'));
+    }
+    
+    // Also capture all months present in transaction history
+    transactions.forEach(t => {
+      const txDate = new Date(t.timestamp);
+      if (!isNaN(txDate.getTime())) {
+        tempMonthsSet.add(format(txDate, 'yyyy-MM'));
+      }
+    });
+    
+    const sortedYearMonths = Array.from(tempMonthsSet).sort();
+    
+    return sortedYearMonths.map(ym => {
+      const [year, month] = ym.split('-');
+      const dateObj = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+      const monthLabel = format(dateObj, 'MMM yyyy', { locale: id });
+      
+      const spending = transactions
+        .filter(t => t.type === 'expense' && format(new Date(t.timestamp), 'yyyy-MM') === ym)
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        
+      const income = transactions
+        .filter(t => t.type === 'income' && format(new Date(t.timestamp), 'yyyy-MM') === ym)
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        
+      return {
+        month: monthLabel,
+        Pengeluaran: spending,
+        Pemasukan: income,
+        rawYM: ym
+      };
+    });
+  })();
+
   if (transactions.length === 0) {
     return (
       <div className="bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex items-center justify-center h-64">
@@ -126,6 +172,93 @@ export default function Charts({ transactions, walletBalances }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Tren Pengeluaran & Pemasukan Bulanan Line Chart */}
+      <div className="bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col w-full relative overflow-hidden" id="monthly-spending-trends-card">
+        {/* subtle background decor */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+        
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 relative z-10">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-indigo-500" />
+              Tren Pengeluaran & Pemasukan Bulanan
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Perbandingan tren bulanan untuk melacak arus kas bersih</p>
+          </div>
+          
+          <div className="flex items-center gap-2 text-[11px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-3 py-1 rounded-full border border-indigo-500/20">
+            <Calendar className="w-3 h-3" />
+            <span>{monthlyTrendData.length} Bulan Terakhir</span>
+          </div>
+        </div>
+
+        <div className="w-full flex-1" style={{ minHeight: '280px' }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
+              <XAxis 
+                dataKey="month" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 11, fill: 'var(--chart-text)' }} 
+              />
+              <YAxis 
+                width={65}
+                axisLine={false} 
+                tickLine={false} 
+                tickFormatter={(value) => {
+                  if (value >= 1000000) {
+                    return `Rp${(value / 1000000).toFixed(1)}jt`;
+                  }
+                  return `Rp${(value / 1000).toFixed(0)}rb`;
+                }} 
+                tick={{ fontSize: 11, fill: 'var(--chart-text)' }} 
+              />
+              <RechartsTooltip 
+                contentStyle={{ 
+                  backgroundColor: 'var(--chart-tooltip-bg)', 
+                  border: '1px solid var(--chart-tooltip-border)', 
+                  borderRadius: '12px', 
+                  color: 'var(--chart-tooltip-text)' 
+                }}
+                formatter={(value: number) => 
+                  new Intl.NumberFormat('id-ID', { 
+                    style: 'currency', 
+                    currency: 'IDR', 
+                    minimumFractionDigits: 0, 
+                    maximumFractionDigits: 0 
+                  }).format(value)
+                } 
+                labelStyle={{ color: 'var(--chart-text)', fontWeight: 'bold', marginBottom: '6px' }}
+              />
+              <Legend 
+                verticalAlign="top" 
+                height={36} 
+                iconType="circle"
+                wrapperStyle={{ fontSize: '11px', fontWeight: '500' }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Pengeluaran" 
+                stroke="#f43f5e" 
+                strokeWidth={3.5} 
+                activeDot={{ r: 8 }} 
+                dot={{ r: 4 }} 
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Pemasukan" 
+                stroke="#10b981" 
+                strokeWidth={2.5} 
+                strokeDasharray="5 5"
+                activeDot={{ r: 6 }} 
+                dot={{ r: 3 }} 
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       {/* Trend Charts */}
       <div className="bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col w-full">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -148,7 +281,7 @@ export default function Charts({ transactions, walletBalances }: Props) {
         <div className="w-full flex-1" style={{ minHeight: '250px' }}>
           <ResponsiveContainer width="100%" height="100%" minHeight={250}>
             {trendTab === 'expense' ? (
-              <AreaChart data={trendData}>
+              <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                 <defs>
                   <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
@@ -157,22 +290,24 @@ export default function Charts({ transactions, walletBalances }: Props) {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
-                <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `Rp${value/1000}k`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
+                <YAxis width={65} axisLine={false} tickLine={false} tickFormatter={(value) => `Rp${value/1000}k`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
                 <RechartsTooltip 
                   contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '12px', color: 'var(--chart-tooltip-text)' }}
+                  itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                   formatter={(value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} 
                   labelStyle={{ color: 'var(--chart-text)', marginBottom: '4px' }}
                 />
                 <Area type="monotone" dataKey="amount" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
               </AreaChart>
             ) : (
-              <BarChart data={incomeTrendData}>
+              <BarChart data={incomeTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
-                <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `Rp${value/1000}k`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
+                <YAxis width={65} axisLine={false} tickLine={false} tickFormatter={(value) => `Rp${value/1000}k`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
                 <RechartsTooltip 
                   cursor={{ fill: 'var(--chart-grid)' }} 
                   contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '12px', color: 'var(--chart-tooltip-text)' }}
+                  itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                   formatter={(value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} 
                   labelStyle={{ color: 'var(--chart-text)', marginBottom: '4px' }}
                 />
@@ -242,13 +377,14 @@ export default function Charts({ transactions, walletBalances }: Props) {
                   />
                 </PieChart>
               ) : (
-                <BarChart data={pieData}>
+                <BarChart data={pieData} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
-                  <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} angle={-45} textAnchor="end" height={60} />
+                  <YAxis width={40} axisLine={false} tickLine={false} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
                   <RechartsTooltip 
                     cursor={{ fill: 'var(--chart-grid)' }} 
                     contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '12px', color: 'var(--chart-tooltip-text)' }}
+                    itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                     formatter={(value: number, name: string, props: any) => [`${Number(value || 0).toFixed(1)}% (Rp${((props?.payload?.value || 0)/1000).toFixed(0)}k)`, "Persentase"]} 
                   />
                   <Bar dataKey="percentage" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={40}>
@@ -320,13 +456,14 @@ export default function Charts({ transactions, walletBalances }: Props) {
                   />
                 </PieChart>
               ) : (
-                <BarChart data={pieIncomeData}>
+                <BarChart data={pieIncomeData} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
-                  <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} angle={-45} textAnchor="end" height={60} />
+                  <YAxis width={40} axisLine={false} tickLine={false} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11, fill: 'var(--chart-text)' }} />
                   <RechartsTooltip 
                     cursor={{ fill: 'var(--chart-grid)' }} 
                     contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '12px', color: 'var(--chart-tooltip-text)' }}
+                    itemStyle={{ color: 'var(--chart-tooltip-text)' }}
                     formatter={(value: number, name: string, props: any) => [`${Number(value || 0).toFixed(1)}% (Rp${((props?.payload?.value || 0)/1000).toFixed(0)}k)`, "Persentase"]} 
                   />
                   <Bar dataKey="percentage" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40}>
